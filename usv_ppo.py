@@ -462,13 +462,13 @@ class PPO:
         else:
             # 创建默认charging_manager以确保维度一致性
             try:
-                from .charging_station_manager import ChargingStationManager
-                default_charging_manager = ChargingStationManager(location=(0.0, 0.0), max_concurrent_usvs=float('inf'))
-                mask = self._build_enhanced_action_mask(state, batch_idxes, default_charging_manager)
-            except ImportError:
                 from env.charging_station_manager import ChargingStationManager
                 default_charging_manager = ChargingStationManager(location=(0.0, 0.0), max_concurrent_usvs=float('inf'))
                 mask = self._build_enhanced_action_mask(state, batch_idxes, default_charging_manager)
+            except ImportError as e:
+                print(f"警告：无法导入ChargingStationManager: {e}")
+                # 使用简单的action mask作为fallback
+                mask = self._build_basic_action_mask(state, batch_idxes)
 
         return batch_idxes, task_features, usv_features_enhanced, task_usv_adj, task_task_adj, mask
 
@@ -734,13 +734,13 @@ class PPO:
             else:
                 # 创建默认charging_manager以确保维度一致性
                 try:
-                    from .charging_station_manager import ChargingStationManager
-                    default_charging_manager = ChargingStationManager(location=(0.0, 0.0), max_concurrent_usvs=float('inf'))
-                    mask = self._build_enhanced_action_mask(state, batch_idxes, default_charging_manager)
-                except ImportError:
                     from env.charging_station_manager import ChargingStationManager
                     default_charging_manager = ChargingStationManager(location=(0.0, 0.0), max_concurrent_usvs=float('inf'))
                     mask = self._build_enhanced_action_mask(state, batch_idxes, default_charging_manager)
+                except ImportError as e:
+                    print(f"警告：无法导入ChargingStationManager: {e}")
+                    # 使用简单的action mask作为fallback
+                    mask = self._build_basic_action_mask(state, batch_idxes)
 
             memory.store(
                 state=state,
