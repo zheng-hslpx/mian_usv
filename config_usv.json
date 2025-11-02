@@ -14,7 +14,7 @@
     "energy_cost_per_distance": 1.0,
     "task_time_energy_ratio": 0.25,
     "enable_pre_validation": true,
-    "device": "cuda"
+    "device": "cuda:0"
   },
   "model_paras": {
     "d": 32,
@@ -43,5 +43,19 @@
     "viz_name": "USV_Training",
     "minibatch_size": 512,
     "parallel_iter": 20
+  },
+  "save_paras": {
+    "base_path": "./save",
+    "experiment_name": "usv_experiment",
+    "experiment_version": "v1.0",
+    "auto_version": true,
+    "max_best_models": 3,
+    "save_interval": 10,
+    "save_training_log": true,
+    "checkpoint_format": "pt",
+    "naming_pattern": "{exp_name}_{task_count}x{usv_count}_{timestamp}",
+    "save_checkpoints": true,
+    "backup_config": true,
+    "compress_old_models": false
   }
 }
