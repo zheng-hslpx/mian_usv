@@ -17,6 +17,7 @@ from env.usv_case_generator import USVCaseGenerator  # USV案例生成器
 from env.usv_env import USVState, unwrap_env, get_env_attr  # USV状态类与属性访问工具
 from usv_validate import usv_validate, get_usv_validate_env  # USV验证模块
 from utils.my_utils import read_json  # 工具函数
+from utils.save_manager import SaveManager  # 新的保存管理器
 
 
 def numpy_obs_to_state(env, observation):
@@ -164,38 +165,26 @@ def main():
     # 创建验证环境
     env_valid = get_usv_validate_env(env_valid_paras)
 
-    # 模型保存管理
-    maxlen = 1  # 保存最佳模型数量
-    best_models = deque()
+    # === 4. 创建保存管理器 ===
+    save_manager = SaveManager(config)
     makespan_best = float('inf')
 
-    # === 4. 可视化支持（visdom） ===
+    # === 5. 可视化支持（visdom） ===
     is_viz = train_paras["viz"]
     if is_viz:
         viz = Visdom(env=train_paras["viz_name"])
 
-    # === 5. 创建保存目录和数据文件 ===
-    str_time = time.strftime("%Y%m%d_%H%M%S", time.localtime(time.time()))
-    save_path = './save/usv_train_{0}'.format(str_time)
-    os.makedirs(save_path)
-
-    # 训练曲线存储路径（平均值）
-    writer_ave = pd.ExcelWriter('{0}/usv_training_ave_{1}.xlsx'.format(save_path, str_time))
-    # 训练曲线存储路径（每个验证实例的值）
-    writer_100 = pd.ExcelWriter('{0}/usv_training_100_{1}.xlsx'.format(save_path, str_time))
+    # === 6. 初始化训练数据存储 ===
     valid_results = []
     valid_results_100 = []
-
-    # 初始化Excel文件
-    data_file = pd.DataFrame(np.arange(10, 1010, 10), columns=["iterations"])
-    data_file.to_excel(writer_ave, sheet_name='Sheet1', index=False)
-    writer_ave.save()
-    writer_ave.close()
-
-    data_file = pd.DataFrame(np.arange(10, 1010, 10), columns=["iterations"])
-    data_file.to_excel(writer_100, sheet_name='Sheet1', index=False)
-    writer_100.save()
-    writer_100.close()
+    training_log = {
+        "config": config,
+        "start_time": time.time(),
+        "iterations": [],
+        "makespan_avg": [],
+        "makespan_100": [],
+        "best_models": []
+    }
 
     # === 6. 开始训练迭代 ===
     start_time = time.time()
@@ -290,40 +279,83 @@ def main():
             valid_results_100.append(vali_result_100)
 
             # === 模型保存和最佳模型管理 ===
+            # 更新训练日志
+            training_log["iterations"].append(i)
+            training_log["makespan_avg"].append(vali_result.item())
+
+            # 使用SaveManager保存最佳模型
+            metrics = {
+                "makespan": vali_result.item(),
+                "iteration": i,
+                "timestamp": time.time()
+            }
+
+            model_info = {
+                "num_tasks": num_tasks,
+                "num_usvs": num_usvs,
+                "iteration": i,
+                "training_time": time.time() - start_time
+            }
+
             if vali_result < makespan_best:
                 makespan_best = vali_result
-                if len(best_models) == maxlen:
-                    delete_file = best_models.popleft()
-                    os.remove(delete_file)
-                save_file = '{0}/usv_save_best_{1}_{2}_{3}.pt'.format(save_path, num_tasks, num_usvs, i)
-                best_models.append(save_file)
-                # 保存USV PPO的两个组件
-                torch.save({
-                    'hgnn_scheduler': model.hgnn_scheduler_old.state_dict(),
-                    'mlps': model.mlps_old.state_dict()
-                }, save_file)
-                print(f"保存最佳模型：{save_file}, makespan: {vali_result.item():.3f}")
+                save_manager.save_best_model(model, metrics, model_info, "makespan")
+                training_log["best_models"].append({
+                    "iteration": i,
+                    "makespan": vali_result.item(),
+                    "save_time": time.time()
+                })
 
             if is_viz:
                 viz.line(
                     X=np.array([i]), Y=np.array([vali_result.item()]),
                     win='window{}'.format(2), update='append', opts=dict(title='makespan of usv_valid'))
 
-    # === 7. 保存训练曲线数据（Excel输出） ===
-    # 重新打开Excel writer来写入最终结果
-    writer_ave = pd.ExcelWriter('{0}/usv_training_ave_{1}.xlsx'.format(save_path, str_time), mode='a', if_sheet_exists='overlay')
-    writer_100 = pd.ExcelWriter('{0}/usv_training_100_{1}.xlsx'.format(save_path, str_time), mode='a', if_sheet_exists='overlay')
+    # === 7. 保存训练结果 ===
+    print("训练完成，正在保存结果...")
 
-    data = pd.DataFrame(np.array(valid_results).transpose(), columns=["res"])
-    data.to_excel(writer_ave, sheet_name='Sheet1', index=False, startcol=1)
-    writer_ave.save()
-    writer_ave.close()
+    # 保存最终模型
+    final_metrics = {
+        "makespan": makespan_best.item() if hasattr(makespan_best, 'item') else makespan_best,
+        "total_iterations": len(training_log["iterations"]),
+        "total_time": time.time() - start_time
+    }
+    save_manager.save_best_model(model, final_metrics, model_info, "makespan")
 
-    column = [i_col for i_col in range(100)]
-    data = pd.DataFrame(np.array(torch.stack(valid_results_100, dim=0).to('cpu')), columns=column)
-    data.to_excel(writer_100, sheet_name='Sheet1', index=False, startcol=1)
-    writer_100.save()
-    writer_100.close()
+    # 保存训练日志
+    training_log["end_time"] = time.time()
+    training_log["total_time"] = training_log["end_time"] - training_log["start_time"]
+    training_log["best_makespan"] = makespan_best.item() if hasattr(makespan_best, 'item') else makespan_best
+    save_manager.save_training_log(training_log, "full_training_log")
+
+    # 保存CSV格式的结果（便于分析）
+    results_data = {
+        "iteration": training_log["iterations"],
+        "makespan_avg": training_log["makespan_avg"]
+    }
+    save_manager.save_results_csv(results_data, "training_curves.csv")
+
+    # 保存验证实例结果
+    if valid_results_100:
+        column_names = [f"instance_{i}" for i in range(len(valid_results_100[0]))]
+        results_100_data = []
+        for epoch_results in valid_results_100:
+            if hasattr(epoch_results, 'to'):
+                epoch_results = epoch_results.to('cpu').numpy()
+            results_100_data.append(epoch_results.tolist())
+
+        df_100 = pd.DataFrame(results_100_data, columns=column_names)
+        df_100.to_csv(os.path.join(save_manager.experiment_dir, "results", "validation_instances.csv"), index=False)
+
+    # 输出实验总结
+    experiment_summary = save_manager.get_experiment_summary()
+    print("\n" + "="*60)
+    print("实验总结:")
+    print(f"实验目录: {experiment_summary['experiment_dir']}")
+    print(f"最佳makespan: {experiment_summary['best_models']['makespan']['metric_value']:.4f}")
+    print(f"总训练时间: {training_log['total_time']:.2f}秒")
+    print(f"总迭代次数: {training_log['total_iterations']}")
+    print("="*60)
 
     print("total_time: ", time.time() - start_time)
 
