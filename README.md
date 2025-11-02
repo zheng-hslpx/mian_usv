@@ -15,7 +15,6 @@ A/
 │   ├── charging_station_manager.py # 充电站管理器
 │   └── generate_usv_validation_data.py # 验证数据生成脚本
 ├── graph/                         # 图神经网络模块
-│   ├── __init__.py
 │   └── usv_hgnn.py               # USV异构图神经网络实现
 ├── utils/                         # 工具模块
 │   ├── __init__.py
@@ -33,7 +32,6 @@ A/
 ├── usv_ppo.py                   # PPO算法实现
 ├── usv_mlp.py                   # MLP网络模块
 ├── usv_validate.py              # 模型验证程序
-├── CLAUDE.md                    # 项目说明文档
 └── README.md                    # 项目说明文件（本文件）
 ```
 
@@ -325,5 +323,6 @@ python usv_validate.py
 - **约束满足**: 8大约束条件100%满足
 - **训练效率**: 支持批次并行训练
 - **泛化能力**: 支持20种不同任务-USV组合
+
 
 该系统为USV任务调度提供了完整的强化学习解决方案，具有良好的模块化设计和扩展性。
